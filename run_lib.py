@@ -32,6 +32,7 @@ import sampling
 from models import utils as mutils
 from models.ema import ExponentialMovingAverage
 import datasets
+import custom_datasets
 import evaluation
 import likelihood
 import sde_lib
@@ -44,13 +45,14 @@ from utils import save_checkpoint, restore_checkpoint
 FLAGS = flags.FLAGS
 
 
-def train(config, workdir):
+def train(config, workdir, datadir):
   """Runs the training pipeline.
 
   Args:
     config: Configuration to use.
     workdir: Working directory for checkpoints and TF summaries. If this
       contains checkpoint training will be resumed from the latest checkpoint.
+    datadir: Folder containing the training and evaluation data.
   """
 
   # Create directories for experimental logs
@@ -78,13 +80,21 @@ def train(config, workdir):
   initial_step = int(state['step'])
 
   # Build data iterators
-  train_ds, eval_ds, _ = datasets.get_dataset(config,
-                                              uniform_dequantization=config.data.uniform_dequantization)
-  train_iter = iter(train_ds)  # pytype: disable=wrong-arg-types
-  eval_iter = iter(eval_ds)  # pytype: disable=wrong-arg-types
-  # Create data normalizer and its inverse
-  scaler = datasets.get_data_scaler(config)
-  inverse_scaler = datasets.get_data_inverse_scaler(config)
+  if config.data.dataset == 'motion':
+    train_ds, eval_ds, _ = custom_datasets.get_dataset(config, datadir)
+    train_iter = iter(train_ds)  # pytype: disable=wrong-arg-types
+    eval_iter = iter(eval_ds)  # pytype: disable=wrong-arg-types
+    # Create data normalizer and its inverse
+    scaler = custom_datasets.get_data_scaler(config)
+    inverse_scaler = custom_datasets.get_data_inverse_scaler(config)
+  else:
+    train_ds, eval_ds, _ = datasets.get_dataset(config,
+                                                uniform_dequantization=config.data.uniform_dequantization)
+    train_iter = iter(train_ds)  # pytype: disable=wrong-arg-types
+    eval_iter = iter(eval_ds)  # pytype: disable=wrong-arg-types
+    # Create data normalizer and its inverse
+    scaler = datasets.get_data_scaler(config)
+    inverse_scaler = datasets.get_data_inverse_scaler(config)
 
   # Setup SDEs
   if config.training.sde.lower() == 'vpsde':
@@ -124,8 +134,8 @@ def train(config, workdir):
 
   for step in range(initial_step, num_train_steps + 1):
     # Convert data to JAX arrays and normalize them. Use ._numpy() to avoid copy.
-    batch = torch.from_numpy(next(train_iter)['image']._numpy()).to(config.device).float()
-    batch = batch.permute(0, 3, 1, 2)
+    batch = next(train_iter)['image'].to(config.device).float()
+    # batch = batch.permute(0, 3, 1, 2)
     batch = scaler(batch)
     # Execute one training step
     loss = train_step_fn(state, batch)
@@ -139,8 +149,8 @@ def train(config, workdir):
 
     # Report the loss on an evaluation dataset periodically
     if step % config.training.eval_freq == 0:
-      eval_batch = torch.from_numpy(next(eval_iter)['image']._numpy()).to(config.device).float()
-      eval_batch = eval_batch.permute(0, 3, 1, 2)
+      eval_batch = next(eval_iter)['image'].to(config.device).float()
+      # eval_batch = eval_batch.permute(0, 3, 1, 2)
       eval_batch = scaler(eval_batch)
       eval_loss = eval_step_fn(state, eval_batch)
       logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss.item()))
@@ -172,9 +182,7 @@ def train(config, workdir):
           save_image(image_grid, fout)
 
 
-def evaluate(config,
-             workdir,
-             eval_folder="eval"):
+def evaluate(config, workdir, datadir, eval_folder="eval"):
   """Evaluate trained models.
 
   Args:
@@ -182,19 +190,24 @@ def evaluate(config,
     workdir: Working directory for checkpoints.
     eval_folder: The subfolder for storing evaluation results. Default to
       "eval".
+    datadir: Folder containing the training and evaluation data.
   """
   # Create directory to eval_folder
   eval_dir = os.path.join(workdir, eval_folder)
   tf.io.gfile.makedirs(eval_dir)
 
   # Build data pipeline
-  train_ds, eval_ds, _ = datasets.get_dataset(config,
-                                              uniform_dequantization=config.data.uniform_dequantization,
-                                              evaluation=True)
-
-  # Create data normalizer and its inverse
-  scaler = datasets.get_data_scaler(config)
-  inverse_scaler = datasets.get_data_inverse_scaler(config)
+  if config.data.dataset == 'motion':
+    train_ds, eval_ds, _ = custom_datasets.get_dataset(config, datadir, evaluation=True)
+    # Create data normalizer and its inverse
+    scaler = custom_datasets.get_data_scaler(config)
+    inverse_scaler = custom_datasets.get_data_inverse_scaler(config)
+  else:
+    train_ds, eval_ds, _ = datasets.get_dataset(config, uniform_dequantization=config.data.uniform_dequantization,
+                                                evaluation=True)
+    # Create data normalizer and its inverse
+    scaler = datasets.get_data_scaler(config)
+    inverse_scaler = datasets.get_data_inverse_scaler(config)
 
   # Initialize model
   score_model = mutils.create_model(config)
@@ -231,7 +244,10 @@ def evaluate(config,
 
 
   # Create data loaders for likelihood evaluation. Only evaluate on uniformly dequantized data
-  train_ds_bpd, eval_ds_bpd, _ = datasets.get_dataset(config,
+  if config.data.dataset == 'motion':
+    train_ds_bpd, eval_ds_bpd, _ = custom_datasets.get_dataset(config, datadir, evaluation=True)
+  else:
+    train_ds_bpd, eval_ds_bpd, _ = datasets.get_dataset(config,
                                                       uniform_dequantization=True, evaluation=True)
   if config.eval.bpd_dataset.lower() == 'train':
     ds_bpd = train_ds_bpd
