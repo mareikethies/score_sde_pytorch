@@ -32,6 +32,7 @@ flags.DEFINE_enum("mode", None, ["train", "eval"], "Running mode: train or eval"
 flags.DEFINE_string("eval_folder", "eval",
                     "The folder name for storing evaluation results")
 flags.mark_flags_as_required(["workdir", "config", "mode"])
+flags.DEFINE_string("datadir", None, "Data directory.")
 
 
 def main(argv):
@@ -48,10 +49,10 @@ def main(argv):
     logger.addHandler(handler)
     logger.setLevel('INFO')
     # Run the training pipeline
-    run_lib.train(FLAGS.config, FLAGS.workdir)
+    run_lib.train(FLAGS.config, FLAGS.workdir, FLAGS.datadir)
   elif FLAGS.mode == "eval":
     # Run the evaluation pipeline
-    run_lib.evaluate(FLAGS.config, FLAGS.workdir, FLAGS.eval_folder)
+    run_lib.evaluate(FLAGS.config, FLAGS.workdir, FLAGS.datadir, FLAGS.eval_folder)
   else:
     raise ValueError(f"Mode {FLAGS.mode} not recognized.")
 
