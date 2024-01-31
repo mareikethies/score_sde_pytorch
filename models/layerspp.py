@@ -17,7 +17,7 @@
 """Layers for defining NCSN++.
 """
 from . import layers
-from . import up_or_down_sampling
+# from . import up_or_down_sampling
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
@@ -27,6 +27,19 @@ conv1x1 = layers.ddpm_conv1x1
 conv3x3 = layers.ddpm_conv3x3
 NIN = layers.NIN
 default_init = layers.default_init
+
+
+def naive_upsample_2d(x, factor=2):
+  _N, C, H, W = x.shape
+  x = torch.reshape(x, (-1, C, H, 1, W, 1))
+  x = x.repeat(1, 1, 1, factor, 1, factor)
+  return torch.reshape(x, (-1, C, H * factor, W * factor))
+
+
+def naive_downsample_2d(x, factor=2):
+  _N, C, H, W = x.shape
+  x = torch.reshape(x, (-1, C, H // factor, factor, W // factor, factor))
+  return torch.mean(x, dim=(3, 5))
 
 
 class GaussianFourierProjection(nn.Module):
@@ -101,11 +114,12 @@ class Upsample(nn.Module):
         self.Conv_0 = conv3x3(in_ch, out_ch)
     else:
       if with_conv:
-        self.Conv2d_0 = up_or_down_sampling.Conv2d(in_ch, out_ch,
-                                                 kernel=3, up=True,
-                                                 resample_kernel=fir_kernel,
-                                                 use_bias=True,
-                                                 kernel_init=default_init())
+        raise NotImplementedError
+        # self.Conv2d_0 = up_or_down_sampling.Conv2d(in_ch, out_ch,
+        #                                          kernel=3, up=True,
+        #                                          resample_kernel=fir_kernel,
+        #                                          use_bias=True,
+        #                                          kernel_init=default_init())
     self.fir = fir
     self.with_conv = with_conv
     self.fir_kernel = fir_kernel
@@ -114,12 +128,13 @@ class Upsample(nn.Module):
   def forward(self, x):
     B, C, H, W = x.shape
     if not self.fir:
-      h = F.interpolate(x, (H * 2, W * 2), 'nearest')
+      h = F.interpolate(x, (H * 2, W * 2), mode='nearest')
       if self.with_conv:
         h = self.Conv_0(h)
     else:
       if not self.with_conv:
-        h = up_or_down_sampling.upsample_2d(x, self.fir_kernel, factor=2)
+        raise NotImplementedError
+        # h = up_or_down_sampling.upsample_2d(x, self.fir_kernel, factor=2)
       else:
         h = self.Conv2d_0(x)
 
@@ -136,11 +151,12 @@ class Downsample(nn.Module):
         self.Conv_0 = conv3x3(in_ch, out_ch, stride=2, padding=0)
     else:
       if with_conv:
-        self.Conv2d_0 = up_or_down_sampling.Conv2d(in_ch, out_ch,
-                                                 kernel=3, down=True,
-                                                 resample_kernel=fir_kernel,
-                                                 use_bias=True,
-                                                 kernel_init=default_init())
+        raise NotImplementedError
+        # self.Conv2d_0 = up_or_down_sampling.Conv2d(in_ch, out_ch,
+        #                                          kernel=3, down=True,
+        #                                          resample_kernel=fir_kernel,
+        #                                          use_bias=True,
+        #                                          kernel_init=default_init())
     self.fir = fir
     self.fir_kernel = fir_kernel
     self.with_conv = with_conv
@@ -156,7 +172,8 @@ class Downsample(nn.Module):
         x = F.avg_pool2d(x, 2, stride=2)
     else:
       if not self.with_conv:
-        x = up_or_down_sampling.downsample_2d(x, self.fir_kernel, factor=2)
+        raise NotImplementedError
+        # x = up_or_down_sampling.downsample_2d(x, self.fir_kernel, factor=2)
       else:
         x = self.Conv2d_0(x)
 
@@ -244,18 +261,20 @@ class ResnetBlockBigGANpp(nn.Module):
 
     if self.up:
       if self.fir:
-        h = up_or_down_sampling.upsample_2d(h, self.fir_kernel, factor=2)
-        x = up_or_down_sampling.upsample_2d(x, self.fir_kernel, factor=2)
+        raise NotImplementedError
+        # h = up_or_down_sampling.upsample_2d(h, self.fir_kernel, factor=2)
+        # x = up_or_down_sampling.upsample_2d(x, self.fir_kernel, factor=2)
       else:
-        h = up_or_down_sampling.naive_upsample_2d(h, factor=2)
-        x = up_or_down_sampling.naive_upsample_2d(x, factor=2)
+        h = naive_upsample_2d(h, factor=2)
+        x = naive_upsample_2d(x, factor=2)
     elif self.down:
       if self.fir:
-        h = up_or_down_sampling.downsample_2d(h, self.fir_kernel, factor=2)
-        x = up_or_down_sampling.downsample_2d(x, self.fir_kernel, factor=2)
+        raise NotImplementedError
+        # h = up_or_down_sampling.downsample_2d(h, self.fir_kernel, factor=2)
+        # x = up_or_down_sampling.downsample_2d(x, self.fir_kernel, factor=2)
       else:
-        h = up_or_down_sampling.naive_downsample_2d(h, factor=2)
-        x = up_or_down_sampling.naive_downsample_2d(x, factor=2)
+        h = naive_downsample_2d(h, factor=2)
+        x = naive_downsample_2d(x, factor=2)
 
     h = self.Conv_0(h)
     # Add bias to each feature map conditioned on the time embedding
