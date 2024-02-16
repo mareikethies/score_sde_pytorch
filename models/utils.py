@@ -162,7 +162,7 @@ def get_score_fn(sde, model, train=False, continuous=False):
   elif isinstance(sde, sde_lib.VESDE):
     def score_fn(x, t):
       if continuous:
-        labels = t  # sde.marginal_prob(torch.zeros_like(x), t)[1]  # todo
+        labels = sde.marginal_prob(torch.zeros_like(x), t)[1]  # todo
       else:
         # For VE-trained models, t=0 corresponds to the highest noise level
         labels = sde.T - t
