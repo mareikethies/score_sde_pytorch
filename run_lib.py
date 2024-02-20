@@ -55,6 +55,7 @@ def train(config, workdir, datadir):
       contains checkpoint training will be resumed from the latest checkpoint.
     datadir: Folder containing the training and evaluation data.
   """
+  print(config)
 
   # Create directories for experimental logs
   sample_dir = os.path.join(workdir, "samples")
